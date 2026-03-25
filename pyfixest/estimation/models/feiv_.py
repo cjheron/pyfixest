@@ -94,33 +94,37 @@ class Feiv(Feols):
     _bread : np.ndarray
         Bread matrix used in the regression.
     _pi_hat : np.ndarray
-        Estimated coefficients from 1st stage regression
+        Estimated coefficients from 1st stage regressions.
+        Shape: (num_endog, num_instruments).
     _X_hat : np.ndarray
-        Predicted values of the 1st stage regression
+        Predicted values of the 1st stage regressions.
+        Shape: (n, num_endog), one column per endogenous variable.
     _v_hat : np.ndarray
-        Residuals of the 1st stage regression
-    _model_1st_stage : Any
-        feols object of 1st stage regression.
-        It contains various results and diagnostics
-        from the fixed effects OLS regression.
+        Residuals of the 1st stage regressions.
+        Shape: (n, num_endog), one column per endogenous variable.
+    _model_1st_stage : list[Feols]
+        List of feols objects, one per endogenous variable, from the 1st stage
+        regression. Each contains results and diagnostics from the fixed effects
+        OLS regression.
     _endogvar_1st_stage : np.ndarray
-        Unweihgted Endogenous independent variable vector
+        Unweighted Endogenous independent variable vector
     _Z_1st_stage : np.ndarray
         Unweighted instruments vector to be used for 1st stage
     _non_exo_instruments : list
         List of instruments name excluding exogenous independent vars.
     __p_iv : scalar
         Number of instruments listed in _non_exo_instruments
-    _f_stat_1st_stage : scalar
-        F-statistics of First Stage regression for evaluation of IV weakness.
-        The computed F-statistics test the following null hypothesis :
-        # H0 : beta_{z_1} = 0 & ... & beta_{z_{p_iv}} = 0 where z_1, ..., z_{p_iv}
-        # are the instrument variables
-        # H1 : H0 does not hold
-        Note that this F-statistics is adjusted to heteroskedasticity /
-        clusters if users set specification of variance-covariance matrix type
-    _eff_F : scalar
-        Effective F-statistics of first stage regression as in Olea and Pflueger 2013
+    _f_stat_1st_stage : list[float]
+        F-statistics of First Stage regressions, one per endogenous variable,
+        for evaluation of IV weakness. The computed F-statistics test:
+        H0 : beta_{z_1} = 0 & ... & beta_{z_{p_iv}} = 0
+        H1 : H0 does not hold
+        Adjusted to heteroskedasticity / clusters if specified.
+    _p_value_1st_stage : list[float]
+        P-values corresponding to _f_stat_1st_stage, one per endogenous variable.
+    _eff_F : list[float]
+        Effective F-statistics of first stage regressions, one per endogenous
+        variable, as in Olea and Pflueger 2013.
     _data: pd.DataFrame
         The data frame used in the estimation. None if arguments `lean = True` or
         `store_data = False`.
@@ -292,7 +296,7 @@ class Feiv(Feols):
             vcov_detail = self._vcov_type_detail
 
         # Do first stage regression
-        model1 = fit_(
+        result = fit_(
             fml=fml_first_stage,
             data=self._data,
             vcov=vcov_detail,
@@ -301,24 +305,35 @@ class Feiv(Feols):
             collin_tol=self._collin_tol,
         )
 
-        # Ensure model1 is of type Feols
-        if isinstance(model1, Feols):
-            # Store the first stage coefficients
-            self._pi_hat = model1._beta_hat
+        print(type(result))
+        print(fml_first_stage)
 
-            # Use fitted values from the first stage
-            self._X_hat = (
-                model1._X @ model1._beta_hat
-            )  # note that model1._X is demeaned
-
-            # Residuals from the first stage
-            self._v_hat = model1._u_hat
-
-            # Store 1st stage model for further use
-            self._model_1st_stage = model1
-
+        # Normalise to a list of Feols models regardless of whether there is one
+        # endogenous variable (feols returns Feols) or many (feols returns FixestMulti).
+        if isinstance(result, Feols):
+            models: list[Feols] = [result]
         else:
-            raise TypeError("The first stage model must be of type Feols")
+            # FixestMulti: extract individual Feols objects in formula order.
+            models = list(result.all_fitted_models.values())
+            if not all(isinstance(m, Feols) for m in models):
+                raise TypeError(
+                    "All first stage models must be of type Feols, got: "
+                    + str([type(m) for m in models])
+                )
+
+        # Store list of first-stage models (one per endogenous variable).
+        self._model_1st_stage: list[Feols] = models
+
+        # _pi_hat: list of coefficient vectors, one per endogenous variable.
+        self._pi_hat = [m._beta_hat for m in models]
+
+        # _X_hat: (n x num_endog) matrix of first-stage fitted values.
+        # Each column replaces the corresponding endogenous variable in the
+        # second stage — this is the correct 2SLS substitution.
+        self._X_hat = np.column_stack([m._X @ m._beta_hat for m in models])
+
+        # _v_hat: (n x num_endog) matrix of first-stage residuals.
+        self._v_hat = np.column_stack([m._u_hat for m in models])
 
         self.IV_weakness_test(["f_stat"])
 
@@ -428,11 +443,11 @@ class Feiv(Feols):
         """Implement IV weakness test (F-test).
 
         This method covers hetero-robust and clustered-robust F statistics.
-        It produces two statistics:
+        It produces two statistics per endogenous variable:
 
-        - self._f_stat_1st_stage: F statistics of first stage regression
-        - self._eff_F: Effective F statistics (Olea and Pflueger 2013)
-                       of first stage regression
+        - self._f_stat_1st_stage: list of F-statistics, one per endogenous variable
+        - self._eff_F: list of Effective F-statistics (Olea and Pflueger 2013),
+                       one per endogenous variable
 
         Notes
         -----
@@ -451,9 +466,8 @@ class Feiv(Feols):
         if "f_stat" in iv_diag_statistics:
             self._p_iv = len(self._non_exo_instruments)
 
-            # Create an identity matrix of size p_iv by p_iv
-            # Pad the identity matrix with zeros to make it of size p_iv by k
-            # Extract all the IV indexes and its first index
+            # Compute the instrument locations once — they are the same across all
+            # first-stage models because every model shares the same instrument set.
             self._iv_loc = [
                 self._coefnames_z.index(x)
                 for x in self._non_exo_instruments
@@ -465,58 +479,60 @@ class Feiv(Feols):
             #      where z_1, ..., z_{p_iv} are the instrument variables
             # H1 : H0 does not hold
 
-            # Pad identity matrix to implement wald-test
-            R = np.zeros((self._p_iv, self._model_1st_stage._k))
-            R[:, self._iv_loc] = np.eye(self._p_iv)
+            self._f_stat_1st_stage: list[float] = []
+            self._p_value_1st_stage: list[float] = []
 
-            with warnings.catch_warnings():
-                warnings.simplefilter("ignore")
-                self._model_1st_stage.wald_test(R=R)
-            self._f_stat_1st_stage = self._model_1st_stage._f_statistic
-            self._p_value_1st_stage = self._model_1st_stage._p_value
+            for model in self._model_1st_stage:
+                # Pad identity matrix to implement wald-test
+                R = np.zeros((self._p_iv, model._k))
+                R[:, self._iv_loc] = np.eye(self._p_iv)
+
+                with warnings.catch_warnings():
+                    warnings.simplefilter("ignore")
+                    model.wald_test(R=R)
+
+                self._f_stat_1st_stage.append(model._f_statistic)
+                self._p_value_1st_stage.append(model._p_value)
 
         if "effective_f" in iv_diag_statistics:
             self.eff_F()
 
     def eff_F(self) -> None:
-        """Compute Effective F stat (Olea and Pflueger 2013)."""
-        # If vcov is iid, redo first stage regression
+        """Compute Effective F stat (Olea and Pflueger 2013) per endogenous variable."""
+        self._eff_F: list[float] = []
 
-        if self._vcov_type_detail == "iid":
-            self._vcov_type_detail = "hetero"
-            self._model_1st_stage.vcov("hetero")
+        for model in self._model_1st_stage:
+            # If vcov is iid, switch to hetero for the effective F calculation.
+            if self._vcov_type_detail == "iid":
+                model.vcov("hetero")
 
-        # Compute Effective F stat by Olea and Pflueger 2013
-        # 1. Extract First Stage Coefficients and Variance-Covariance Matrix:
-        #   Extract the coefficients for the instrument z
-        #   from the first stage regression.
-        #   Extract the robust variance-covariance matrix of these coefficients.
-        #   Extract the instrument matrix.
-        # 2. Compute the Instrument Matrix:
-        #   Construct the instrument matrix Q_{zz} = Z.T x Z
-        # 3. Compute the Effective F-statistic:
-        #   F_{eff} = π.T Q_{zz} π / trance(ΣQ_{zz})
+            # Compute Effective F stat by Olea and Pflueger 2013
+            # 1. Extract First Stage Coefficients and Variance-Covariance Matrix:
+            #   Extract the coefficients for the instrument z
+            #   from the first stage regression.
+            #   Extract the robust variance-covariance matrix of these coefficients.
+            #   Extract the instrument matrix.
+            # 2. Compute the Instrument Matrix:
+            #   Construct the instrument matrix Q_{zz} = Z.T x Z
+            # 3. Compute the Effective F-statistic:
+            #   F_{eff} = π.T Q_{zz} π / trace(ΣQ_{zz})
 
-        # Extract coefficients for the non-exogenous instruments
+            pi_hat = np.array(model.coef()[self._non_exo_instruments])
+            iv_positions = [
+                self._coefnames_z.index(instrument)
+                for instrument in self._non_exo_instruments
+            ]
+            Z = model._X[:, iv_positions]
 
-        pi_hat = np.array(self._model_1st_stage.coef()[self._non_exo_instruments])
-        iv_positions = [
-            self._coefnames_z.index(instrument)
-            for instrument in self._non_exo_instruments
-        ]
-        Z = self._model_1st_stage._X[:, iv_positions]
+            # Calculate the cross-product of the instrument matrix
+            Q_zz = Z.T @ Z
 
-        # Calculate the cross-product of the instrument matrix
-        Q_zz = Z.T @ Z
+            # Extract the robust variance-covariance matrix
+            vcv = model._vcov
 
-        # Extract the robust variance-covariance matrix
-        vcv = self._model_1st_stage._vcov
+            # Extract the submatrix for the instrument coefficients
+            Sigma = vcv[np.ix_(self._iv_loc, self._iv_loc)]
 
-        # Map the instrument names to their indices in the parameter list
-        # Number of rows/columns in vcv
-
-        # Extract the submatrix
-        Sigma = vcv[np.ix_(self._iv_loc, self._iv_loc)]
-
-        # Calculate the effective F-statistic
-        self._eff_F = (pi_hat.T @ Q_zz @ pi_hat) / np.sum(np.diag(Sigma @ Q_zz))
+            # Calculate the effective F-statistic
+            eff_f = (pi_hat.T @ Q_zz @ pi_hat) / np.sum(np.diag(Sigma @ Q_zz))
+            self._eff_F.append(eff_f)

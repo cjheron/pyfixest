@@ -109,8 +109,8 @@ class ModelMatrix:
             # creating multiple columns for the dependent variable
             # TODO: Make this check more explicit?
             raise TypeError("The dependent variable must be numeric.")
-        if self.endogenous is not None and self.endogenous.shape[1] != 1:
-            raise TypeError("The endogenous variable must be numeric.")
+        # if self.endogenous is not None and self.endogenous.shape[1] != 1:
+        #     raise TypeError("The endogenous variable must be numeric.")
         # Drop rows with non-finite values
         is_infinite = pd.Series(
             ~np.isfinite(self._data).all(axis=1), index=self._data.index

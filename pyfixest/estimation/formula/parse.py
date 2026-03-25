@@ -35,10 +35,10 @@ class Formula:
             exogenous = second_stage.rhs.required_variables
             endogenous = first_stage.lhs.required_variables
             instruments = first_stage.rhs.required_variables
-            if len(endogenous) > 1:
-                raise FormulaSyntaxError(
-                    "Multiple endogenous variables are currently not supported."
-                )
+            # if len(endogenous) > 1:
+            #     raise FormulaSyntaxError(
+            #         "Multiple endogenous variables are currently not supported."
+            #     )
             if len(endogenous) > len(instruments):
                 raise UnderDeterminedIVError(
                     "The IV system is underdetermined. "
