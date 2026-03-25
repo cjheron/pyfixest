@@ -32,30 +32,30 @@ class Formula:
         if self._first_stage is not None:
             print(self._second_stage)
             print(self._first_stage)
-            second_stage = formulaic.Formula(self._second_stage)
-            first_stage = formulaic.Formula(self._first_stage)
-            exogenous = second_stage.rhs.required_variables
-            endogenous = first_stage.lhs.required_variables
-            instruments = first_stage.rhs.required_variables
-            # if len(endogenous) > 1:
-            #     raise FormulaSyntaxError(
-            #         "Multiple endogenous variables are currently not supported."
+            # second_stage = formulaic.Formula(self._second_stage)
+            # first_stage = formulaic.Formula(self._first_stage)
+            # exogenous = second_stage.rhs.required_variables
+            # endogenous = first_stage.lhs.required_variables
+            # instruments = first_stage.rhs.required_variables
+            # # if len(endogenous) > 1:
+            # #     raise FormulaSyntaxError(
+            # #         "Multiple endogenous variables are currently not supported."
+            # #     )
+            # if len(endogenous) > len(instruments):
+            #     raise UnderDeterminedIVError(
+            #         "The IV system is underdetermined. "
+            #         "Please provide at least as many instruments as endogenous variables."
             #     )
-            if len(endogenous) > len(instruments):
-                raise UnderDeterminedIVError(
-                    "The IV system is underdetermined. "
-                    "Please provide at least as many instruments as endogenous variables."
-                )
-            endogenous_are_covariates = endogenous.intersection(exogenous)
-            if endogenous_are_covariates:
-                raise EndogVarsAsCovarsError(
-                    f"Endogeneous variables specified as covariates: {endogenous_are_covariates}"
-                )
-            instruments_are_covariates = instruments.intersection(exogenous)
-            if instruments_are_covariates:
-                raise InstrumentsAsCovarsError(
-                    f"Instruments specified as covariates: {instruments_are_covariates}"
-                )
+            # endogenous_are_covariates = endogenous.intersection(exogenous)
+            # if endogenous_are_covariates:
+            #     raise EndogVarsAsCovarsError(
+            #         f"Endogeneous variables specified as covariates: {endogenous_are_covariates}"
+            #     )
+            # instruments_are_covariates = instruments.intersection(exogenous)
+            # if instruments_are_covariates:
+            #     raise InstrumentsAsCovarsError(
+            #         f"Instruments specified as covariates: {instruments_are_covariates}"
+            #     )
 
     @property
     def formula(self) -> str:
