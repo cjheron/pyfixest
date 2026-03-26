@@ -305,9 +305,6 @@ class Feiv(Feols):
             collin_tol=self._collin_tol,
         )
 
-        print(type(result))
-        print(fml_first_stage)
-
         # Normalise to a list of Feols models regardless of whether there is one
         # endogenous variable (feols returns Feols) or many (feols returns FixestMulti).
         if isinstance(result, Feols):

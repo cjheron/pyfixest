@@ -29,9 +29,8 @@ class Formula:
     _first_stage: str | None = None
 
     def __post_init__(self) -> None:
-        if self._first_stage is not None:
-            print(self._second_stage)
-            print(self._first_stage)
+        pass
+        # if self._first_stage is not None:
             # second_stage = formulaic.Formula(self._second_stage)
             # first_stage = formulaic.Formula(self._first_stage)
             # exogenous = second_stage.rhs.required_variables
